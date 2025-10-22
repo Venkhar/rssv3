@@ -1,8 +1,11 @@
-requests
+httpx[http2]
 beautifulsoup4
 lxml
 feedgen
 dateparser
 readability-lxml
 PyYAML
+uvicorn
+fastapi
+aiosqlite
 urllib3<3
