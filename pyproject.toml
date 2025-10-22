@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "rssgen"
+version = "0.2.0"
+description = "Generate RSS feeds from HTML pages without native feeds"
+authors = [{name = "Venkhar"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+"httpx[http2]",
+"beautifulsoup4",
+"lxml",
+"feedgen",
+"dateparser",
+"readability-lxml",
+"PyYAML",
+"uvicorn",
+"fastapi",
+"aiosqlite",
+"urllib3<3"
+]
+
+
+[project.scripts]
+rssgen = "rssgen.cli:main"
