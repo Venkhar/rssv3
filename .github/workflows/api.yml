@@ -1,0 +1,98 @@
+name: API-like feed management
+
+on:
+  # Déclenchement depuis l’extérieur (via l’API GitHub)
+  repository_dispatch:
+    types: [add-feed]
+
+  # Déclenchement manuel avec inputs (depuis l’onglet Actions ou via API)
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL à ajouter (obligatoire)"
+        required: true
+      out:
+        description: "Nom du fichier de sortie ex: exemple.xml"
+        required: false
+      feed_title:
+        description: "Titre du flux"
+        required: false
+      site_name:
+        description: "Nom du site"
+        required: false
+      selectors:
+        description: "Sélecteurs CSS (JSON) ex: {\"item\":\"article\",\"link\":\"h2 a\"}"
+        required: false
+      fetch_detail:
+        description: "Ouvrir les pages de détail (true/false)"
+        required: false
+      force_relative:
+        description: "Restreindre aux liens du même domaine (true/false)"
+        required: false
+
+# Évite les exécutions qui se chevauchent si plusieurs ajouts arrivent en même temps
+concurrency:
+  group: rss-api
+  cancel-in-progress: false
+
+# Autorise le workflow à pousser des commits (sources.yaml + dist/*.xml)
+permissions:
+  contents: write
+
+jobs:
+  upsert-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements.txt"
+
+      - name: Install deps
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Mappe les inputs du workflow (workflow_dispatch) vers des variables d'env
+      # que tools/add_source.py sait lire (INPUT_*). Pour repository_dispatch,
+      # le script lira GITHUB_EVENT_PATH et prendra client_payload automatiquement.
+      - name: Upsert sources.yaml from inputs/payload
+        env:
+          INPUT_URL: ${{ github.event.inputs.url }}
+          INPUT_OUT: ${{ github.event.inputs.out }}
+          INPUT_FEED_TITLE: ${{ github.event.inputs.feed_title }}
+          INPUT_SITE_NAME: ${{ github.event.inputs.site_name }}
+          INPUT_SELECTORS: ${{ github.event.inputs.selectors }}
+          INPUT_FETCH_DETAIL: ${{ github.event.inputs.fetch_detail }}
+          INPUT_FORCE_RELATIVE: ${{ github.event.inputs.force_relative }}
+        run: |
+          source .venv/bin/activate
+          python tools/add_source.py
+
+      - name: Build feeds (batch)
+        run: |
+          source .venv/bin/activate
+          mkdir -p dist
+          if [ -f sources.yaml ]; then
+            python -m rssgen.cli --list sources.yaml --out-dir dist --concurrency 20 --max-items 40
+          else
+            echo "❌ sources.yaml introuvable — rien à construire"
+            exit 1
+          fi
+          ls -l dist || true
+
+      - name: Commit & push changes
+        run: |
+          git config user.name "rssgen-bot"
+          git config user.email "bot@example.com"
+          git add sources.yaml dist/*.xml || true
+          git commit -m "feat(feed): add/update via API-like event $(date -u +%FT%H:%MZ)" || echo "No changes to commit"
+          git push
