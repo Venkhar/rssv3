@@ -1,0 +1,67 @@
+name: Build RSS feeds (q2h)
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"   # toutes les 2 heures (UTC)
+  workflow_dispatch: {}      # permet aussi de lancer manuellement
+
+# Évite les exécutions qui se chevauchent si une run prend du temps
+concurrency:
+  group: rss-cron
+  cancel-in-progress: false
+
+# Autorise le workflow à pousser des commits (dist/*.xml)
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements.txt"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build feeds
+        env:
+          # Optionnel : permet un fallback si tu n'as pas de sources.yaml
+          # (tu peux le définir aussi dans "Repository secrets" ou "Variables")
+          RSS_SOURCE_URL: ${{ vars.RSS_SOURCE_URL || secrets.RSS_SOURCE_URL }}
+        run: |
+          source .venv/bin/activate
+          mkdir -p dist
+          if [ -f sources.yaml ]; then
+            echo "→ sources.yaml détecté : génération en batch"
+            python -m rssgen.cli --list sources.yaml --out-dir dist --concurrency 20 --max-items 40
+          else
+            if [ -n "$RSS_SOURCE_URL" ]; then
+              echo "→ Pas de sources.yaml, fallback RSS_SOURCE_URL=$RSS_SOURCE_URL"
+              python -m rssgen.cli "$RSS_SOURCE_URL" --out-dir dist
+            else
+              echo "❌ Ni sources.yaml ni RSS_SOURCE_URL — rien à construire"
+              exit 1
+            fi
+          fi
+          ls -l dist || true
+
+      - name: Commit & push artifacts
+        run: |
+          git config user.name "rssgen-bot"
+          git config user.email "bot@example.com"
+          git add dist/*.xml || true
+          git commit -m "chore(feed): update $(date -u +%FT%H:%MZ)" || echo "No changes to commit"
+          git push
