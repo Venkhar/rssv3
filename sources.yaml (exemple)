@@ -1,0 +1,8 @@
+sources:
+- url: https://exemple.com/blog/
+out: exemple-blog.xml
+feed_title: "Exemple — Blog"
+fetch_detail: true
+- url: https://acme.tld/updates/
+out: acme-updates.xml
+force_relative: true
